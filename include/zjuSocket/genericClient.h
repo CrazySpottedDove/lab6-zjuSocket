@@ -2,8 +2,6 @@
 #include <cstdint>
 #include <cstdio>
 namespace zjuSocket {
-using port_t = uint16_t;
-
 enum class ClientCommand : uint8_t
 {
     PrintHelp,
