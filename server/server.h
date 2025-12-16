@@ -2,6 +2,7 @@
 
 #include "zjuSocket/common.h"
 #include "zjuSocket/genericServer.h"
+#include "zjuSocket/message.h"
 #include <mutex>
 #include <netinet/in.h>
 #include <vector>
@@ -20,10 +21,11 @@ private:
         Server* server;
         socket_handle_t client_socket_handle;
     };
-    static void*            ClientHandlerThread(void* arg);
+    static void*            clientHandlerThread(void* arg);
     std::vector<SocketInfo> clients_;
     std::mutex              clients_mutex_;
     sockaddr_in             server_addr_;
     socket_handle_t         server_socket_handle_;
+    void send(socket_handle_t client_socket_handle, const Message* message);
 };
 }   // namespace zjuSocket

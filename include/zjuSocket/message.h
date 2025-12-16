@@ -62,6 +62,10 @@ enum class MessageType : uint8_t
     REPOST
 };
 
+constexpr char ANSWER_SEND_MESSAGE_NOT_FOUND[] = "Not Found";
+constexpr char ANSWER_SEND_MESSAGE_OK[]        = "Ok";
+constexpr char ANSWER_SEND_MESSAGE_ERROR[]     = "Error";
+
 constexpr int MESSAGE_MAX_LENGTH    = 1024;
 constexpr int MESSAGE_HEADER_LENGTH = sizeof(MessageType) / sizeof(uint8_t);
 

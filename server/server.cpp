@@ -3,7 +3,10 @@
 #include "zjuSocket/log.h"
 #include "zjuSocket/message.h"
 #include <arpa/inet.h>
+#include <cstddef>
 #include <cstring>
+#include <ctime>
+#include <iomanip>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <sys/socket.h>
@@ -31,13 +34,26 @@ Server::Server()
     INFO("Server initialized.");
 }
 
-void* Server::ClientHandlerThread(void* arg)
+void Server::send(socket_handle_t client_socket_handle, const Message* message)
+{
+    const auto error_code = ::send(client_socket_handle, message, sizeof(Message), 0);
+    if (error_code < 0) {
+        WARNING("Send message to client %d failed.\n\tError code: %zd",
+                client_socket_handle,
+                error_code);
+    }
+    else {
+        INFO("Sent message to client %d.", client_socket_handle);
+    }
+}
+
+void* Server::clientHandlerThread(void* arg)
 {
     auto*           thread_arg           = static_cast<ThreadArg*>(arg);
     Server*         server               = thread_arg->server;
     socket_handle_t client_socket_handle = thread_arg->client_socket_handle;
     constexpr char  message[]            = "Hello World!";
-    send(client_socket_handle, message, sizeof(message), 0);
+    ::send(client_socket_handle, message, sizeof(message), 0);
 
     Message msg;
     bool    running = true;
@@ -69,10 +85,96 @@ void* Server::ClientHandlerThread(void* arg)
         }
         case MessageType::GET_TIME:
         {
+            INFO("Client %d requested current time.", client_socket_handle);
+            time_t now;
+            time(&now);
+            struct tm* local_time = localtime(&now);
+            char       time_str[100];
+            strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", local_time);
+            Message response_msg;
+            response_msg.type = MessageType::ANSWER_GET_TIME;
+            strncpy(response_msg.data, time_str, sizeof(response_msg.data));
+            server->send(client_socket_handle, &response_msg);
+            break;
+        }
+        case MessageType::GET_NAME:
+        {
+            INFO("Client %d requested server name.", client_socket_handle);
+            Message response_msg;
+            response_msg.type = MessageType::ANSWER_GET_NAME;
+            gethostname(response_msg.data, sizeof(response_msg.data));
+            server->send(client_socket_handle, &response_msg);
 
+            break;
         }
+        case MessageType::GET_CLIENT_LIST:
+        {
+            INFO("Client %d requested client list.", client_socket_handle);
+            server->clients_mutex_.lock();
+            std::string client_list;
+            for (const auto& client : server->clients_) {
+                client_list += client.ip_address + ":" + std::to_string(client.port) + "\n";
+            }
+            server->clients_mutex_.unlock();
+            Message response_msg;
+            response_msg.type = MessageType::ANSWER_GET_CLIENT_LIST;
+            strncpy(response_msg.data, client_list.c_str(), sizeof(response_msg.data));
+            server->send(client_socket_handle, &response_msg);
+
+            break;
         }
+        case MessageType::SEND_MESSAGE:
+        {
+            {
+                std::string data = std::string(msg.data);
+                std::string ip   = data.substr(0, data.find(":"));
+                data             = data.substr(data.find(":") + 1);
+                int port         = stoi(data.substr(0, data.find(":")));
+                data             = data.substr(data.find(":") + 1);
+                INFO("Client %d sending message to %s:%d", client_socket_handle, ip.c_str(), port);
+                int target = -1;
+                server->clients_mutex_.lock();
+                auto& clients = server->clients_;
+                // 查找目标客户端
+                for (size_t i = 0; i < clients.size(); i++) {
+                    if (clients[i].ip_address == ip && clients[i].port == port) {
+                        target = i;
+                        break;
+                    }
+                }
+                Message answer_message;
+                answer_message.type = MessageType::ANSWER_SEND_MESSAGE;
+                if (target == -1) {   // 没有目标
+                    server->clients_mutex_.unlock();
+                    WARNING("No such client %s:%d", ip.c_str(), port);
+                    // 回复发送者，目标不存在
+                    sprintf(answer_message.data, ANSWER_SEND_MESSAGE_NOT_FOUND);
+                    server->send(client_socket_handle, &answer_message);
+                }
+                else {
+                    Message forward_message;
+                    forward_message.type = MessageType::REPOST;
+                    strcpy(forward_message.data, data.c_str());
+                    // 转发消息到目标客户端
+                    server->send(clients[target].handle, &forward_message);
+                    server->clients_mutex_.unlock();
+                    // 回复发送者，发送成功
+                    sprintf(answer_message.data, ANSWER_SEND_MESSAGE_OK);
+                    server->send(client_socket_handle, &answer_message);
+                }
+
+                break;
+            }
+        }
+        default:
+            WARNING("Unknown message type received from client %d.", client_socket_handle);
+            break;
+        }
+        memset(&msg, 0, sizeof(Message));
+
     }
+    delete thread_arg;
+    return nullptr;
 }
 
 void Server::Run()
@@ -101,5 +203,9 @@ void Server::Run()
              client_socket_info.port);
 
         // 创建一个线程来处理该客户端的通信
+        auto*     thread_arg = new ThreadArg{this, client_socket_handle};
+        pthread_t client_thread_id;
+        pthread_create(&client_thread_id, nullptr, clientHandlerThread, thread_arg);
+        pthread_detach(client_thread_id);
     }
 }
