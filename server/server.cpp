@@ -52,8 +52,11 @@ void* Server::clientHandlerThread(void* arg)
     auto*           thread_arg           = static_cast<ThreadArg*>(arg);
     Server*         server               = thread_arg->server;
     socket_handle_t client_socket_handle = thread_arg->client_socket_handle;
-    constexpr char  message[]            = "Hello World!";
-    ::send(client_socket_handle, message, sizeof(message), 0);
+    // send greeting as a proper Message so client interprets it correctly
+    Message greeting_msg;
+    greeting_msg.type = MessageType::REPOST;
+    strncpy(greeting_msg.data, "Hello World!", sizeof(greeting_msg.data) - 1);
+    server->send(client_socket_handle, &greeting_msg);
 
     Message msg;
     bool    running = true;
@@ -148,7 +151,7 @@ void* Server::clientHandlerThread(void* arg)
                     server->clients_mutex_.unlock();
                     WARNING("No such client %s:%d", ip.c_str(), port);
                     // 回复发送者，目标不存在
-                    sprintf(answer_message.data, ANSWER_SEND_MESSAGE_NOT_FOUND);
+                    snprintf(answer_message.data, sizeof(answer_message.data), "%s", ANSWER_SEND_MESSAGE_NOT_FOUND);
                     server->send(client_socket_handle, &answer_message);
                 }
                 else {
@@ -159,7 +162,7 @@ void* Server::clientHandlerThread(void* arg)
                     server->send(clients[target].handle, &forward_message);
                     server->clients_mutex_.unlock();
                     // 回复发送者，发送成功
-                    sprintf(answer_message.data, ANSWER_SEND_MESSAGE_OK);
+                    snprintf(answer_message.data, sizeof(answer_message.data), "%s", ANSWER_SEND_MESSAGE_OK);
                     server->send(client_socket_handle, &answer_message);
                 }
 

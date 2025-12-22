@@ -1,3 +1,4 @@
+.DEFAULT_GOAL := all
 .PHONY: all release debug clean
 DEBUG_DIR = build
 RELEASE_DIR = build-release
