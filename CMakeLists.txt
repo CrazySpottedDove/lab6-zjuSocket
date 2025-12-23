@@ -19,3 +19,6 @@ target_link_libraries(server PRIVATE server_core)
 
 add_executable(client client/main.cpp)
 target_link_libraries(client PRIVATE client_core)
+
+add_executable(test_client client/test.cpp)
+target_link_libraries(test_client PRIVATE client_core)

@@ -20,7 +20,7 @@ public:
     void handleGetClientList();
     void handleSendMessage();
     [[noreturn]] void handleExit();
-
+    void handleConnectServerCore(const char ip[], int port);
 private:
     socket_handle_t server_socket_handle_;
     bool            connected_;

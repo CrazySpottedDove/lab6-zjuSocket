@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := all
-.PHONY: all release debug clean
+.PHONY: all release debug clean test
 DEBUG_DIR = build
 RELEASE_DIR = build-release
 clean:
@@ -12,3 +12,5 @@ debug:
 	cmake --build $(DEBUG_DIR) --config Debug
 all: release
 
+test: debug
+	./scripts/test.sh
