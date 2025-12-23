@@ -10,6 +10,8 @@
 #include <string>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <errno.h>
+#include <vector>
 
 namespace zjuSocket {
 
@@ -190,45 +192,74 @@ void Client::handleSendMessage()
 
 void* Client::receiverThread(void* arg)
 {
-    auto*   client = static_cast<Client*>(arg);
-    Message msg;
+    auto* client = static_cast<Client*>(arg);
+
+    std::vector<char> buf;
+    buf.reserve(64 * 1024);
+
+    char tmp[4096];
+
     while (client->connected_) {
-        ssize_t recved = recv(client->server_socket_handle_, &msg, sizeof(msg), 0);
-        if (recved <= 0) {
-            WARNING("Receive failed or server closed connection.");
+        ssize_t n = ::recv(client->server_socket_handle_, tmp, sizeof(tmp), 0);
+        if (n == 0) {
+            WARNING("Server closed connection.");
+            client->connected_ = false;
+            break;
+        }
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            WARNING("recv error (errno=%d).", errno);
             client->connected_ = false;
             break;
         }
 
-        switch (msg.type) {
-        case MessageType::REPOST: printf("[REPOST] %s\n", msg.data); break;
-        case MessageType::ANSWER_GET_TIME: printf("[Server Time] %s\n", msg.data); client->test_count++; break;
-        case MessageType::ANSWER_GET_NAME: printf("[Server Name] %s\n", msg.data); break;
-        case MessageType::ANSWER_GET_CLIENT_LIST:
-        {
-            // Print client list, only non-empty lines
-            printf("[Client List]\n");
-            std::string list(msg.data);
-            size_t      start = 0, end;
-            while ((end = list.find('\n', start)) != std::string::npos) {
-                if (end > start) {
-                    printf("%s\n", list.substr(start, end - start).c_str());
+        buf.insert(buf.end(), tmp, tmp + n);
+
+        while (buf.size() >= sizeof(Message)) {
+            Message msg;
+            std::memcpy(&msg, buf.data(), sizeof(Message));
+
+            buf.erase(buf.begin(), buf.begin() + sizeof(Message));
+
+            switch (msg.type) {
+            case MessageType::REPOST:
+                printf("[REPOST] %s\n", msg.data);
+                break;
+            case MessageType::ANSWER_GET_TIME:
+                printf("[Server Time] %s\n", msg.data);
+                client->test_count++;
+                break;
+            case MessageType::ANSWER_GET_NAME:
+                printf("[Server Name] %s\n", msg.data);
+                break;
+            case MessageType::ANSWER_GET_CLIENT_LIST: {
+                printf("[Client List]\n");
+                std::string list(msg.data);
+                size_t start = 0, end;
+                while ((end = list.find('\n', start)) != std::string::npos) {
+                    if (end > start) {
+                        printf("%s\n", list.substr(start, end - start).c_str());
+                    }
+                    start = end + 1;
                 }
-                start = end + 1;
+                if (start < list.size()) {
+                    printf("%s\n", list.substr(start).c_str());
+                }
+                break;
             }
-            if (start < list.size()) {
-                printf("%s\n", list.substr(start).c_str());
+            case MessageType::ANSWER_SEND_MESSAGE:
+                printf("[Send Answer] %s\n", msg.data);
+                break;
+            default:
+                printf("[Message Type %d] %s\n", static_cast<int>(msg.type), msg.data);
+                break;
             }
-            break;
+
+            fflush(stdout);
         }
-        case MessageType::ANSWER_SEND_MESSAGE: printf("[Send Answer] %s\n", msg.data); break;
-        default: printf("[Message Type %d] %s\n", static_cast<int>(msg.type), msg.data); break;
-        }
-        // Print prompt after every message
-        // printf("Please enter command: ");
-        fflush(stdout);
-        memset(&msg, 0, sizeof(msg));
     }
+
     return nullptr;
 }
+
 }   // namespace zjuSocket
