@@ -202,7 +202,7 @@ void* Client::receiverThread(void* arg)
 
         switch (msg.type) {
         case MessageType::REPOST: printf("[REPOST] %s\n", msg.data); break;
-        case MessageType::ANSWER_GET_TIME: printf("[Server Time] %s\n", msg.data); break;
+        case MessageType::ANSWER_GET_TIME: printf("[Server Time] %s\n", msg.data); client->test_count++; break;
         case MessageType::ANSWER_GET_NAME: printf("[Server Name] %s\n", msg.data); break;
         case MessageType::ANSWER_GET_CLIENT_LIST:
         {

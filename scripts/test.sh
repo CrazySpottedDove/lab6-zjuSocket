@@ -1,6 +1,6 @@
 #!/bin/bash
 TEST_DIR=./build/test_client
-CLIENT_NUM=10
+CLIENT_NUM=1
 for ((i=1; i<=CLIENT_NUM; i++)); do
     echo "启动客户端实例 #$i"
     ${TEST_DIR} &
