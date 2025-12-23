@@ -1,4 +1,4 @@
-#include "zjuSocket/client.h"
+#include "client.h"
 #include "zjuSocket/message.h"
 #include "zjuSocket/log.h"
 
