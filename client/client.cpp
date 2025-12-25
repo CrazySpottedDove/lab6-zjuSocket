@@ -60,12 +60,14 @@ void Client::handleConnectServer()
     scanf("%d", &port);
     INFO("Trying to connect to %s:%d", ip, port);
 
+    // 创建套接字
     server_socket_handle_ = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket_handle_ < 0) {
         ERROR("Create socket failed.");
         return;
     }
 
+    // 填充服务器地址结构体
     sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
@@ -77,6 +79,7 @@ void Client::handleConnectServer()
         return;
     }
 
+    // 连接服务器
     if (connect(server_socket_handle_, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         ERROR("Connect to server %s:%d failed.", ip, port);
         close(server_socket_handle_);
@@ -87,7 +90,7 @@ void Client::handleConnectServer()
     connected_ = true;
     INFO("Connected to server %s:%d", ip, port);
 
-    // start receiver thread
+    // 启动接收线程，异步接收服务器消息
     pthread_create(&receiver_thread_, nullptr, receiverThread, this);
     pthread_detach(receiver_thread_);
 }
@@ -99,10 +102,13 @@ void Client::handleDisconnectServer()
         return;
     }
 
+    // 构造断开连接消息并发送
     Message msg;
     msg.type = MessageType::DISCONNECT;
     memset(msg.data, 0, sizeof(msg.data));
     ::send(server_socket_handle_, &msg, sizeof(msg), 0);
+
+    // 关闭套接字
     close(server_socket_handle_);
     server_socket_handle_ = -1;
     connected_            = false;
@@ -115,6 +121,7 @@ void Client::handleGetServerTime()
         WARNING("Not connected.");
         return;
     }
+    // 构造请求时间消息并发送
     Message msg;
     msg.type = MessageType::GET_TIME;
     memset(msg.data, 0, sizeof(msg.data));
@@ -127,6 +134,7 @@ void Client::handleGetServerName()
         WARNING("Not connected.");
         return;
     }
+    // 构造请求服务器名称消息并发送
     Message msg;
     msg.type = MessageType::GET_NAME;
     memset(msg.data, 0, sizeof(msg.data));
@@ -139,6 +147,7 @@ void Client::handleGetClientList()
         WARNING("Not connected.");
         return;
     }
+    // 构造请求客户端列表消息并发送
     Message msg;
     msg.type = MessageType::GET_CLIENT_LIST;
     memset(msg.data, 0, sizeof(msg.data));
@@ -151,23 +160,25 @@ void Client::handleSendMessage()
         WARNING("Not connected.");
         return;
     }
-    // flush newline left by scanf
+    // 清除scanf遗留的换行符，避免影响后续输入
     int ch = getchar();
     while (ch != '\n' && ch != EOF) ch = getchar();
 
     char target[256];
     printf("Target (ip:port): ");
     if (!fgets(target, sizeof(target), stdin)) return;
-    // strip newline
+    // 去除目标字符串末尾的换行符
     std::string target_s(target);
     if (!target_s.empty() && target_s.back() == '\n') target_s.pop_back();
 
     char message_buf[512];
     printf("Message: ");
     if (!fgets(message_buf, sizeof(message_buf), stdin)) return;
+    // 去除消息字符串末尾的换行符
     std::string message_s(message_buf);
     if (!message_s.empty() && message_s.back() == '\n') message_s.pop_back();
 
+    // 构造发送消息的数据包，格式为 "ip:port:message"
     Message msg;
     msg.type = MessageType::SEND_MESSAGE;
     memset(msg.data, 0, sizeof(msg.data));
@@ -192,36 +203,42 @@ void* Client::receiverThread(void* arg)
     char tmp[4096];
 
     while (client->connected_) {
+        // 接收服务器数据
         ssize_t n = ::recv(client->server_socket_handle_, tmp, sizeof(tmp), 0);
         if (n == 0) {
+            // 服务器关闭连接
             WARNING("Server closed connection.");
             client->connected_ = false;
             break;
         }
         if (n < 0) {
+            // EINTR为中断，继续接收；其他错误则断开
             if (errno == EINTR) continue;
             WARNING("recv error (errno=%d).", errno);
             client->connected_ = false;
             break;
         }
 
+        // 将接收到的数据追加到缓冲区
         buf.insert(buf.end(), tmp, tmp + n);
 
+        // 只要缓冲区中有完整的Message结构体就处理
         while (buf.size() >= sizeof(Message)) {
             Message msg;
             std::memcpy(&msg, buf.data(), sizeof(Message));
 
+            // 移除已处理的数据
             buf.erase(buf.begin(), buf.begin() + sizeof(Message));
 
+            // 根据消息类型处理不同的响应
             switch (msg.type) {
             case MessageType::REPOST: printf("[REPOST] %s\n", msg.data); break;
-            case MessageType::ANSWER_GET_TIME:
-                printf("[Server Time] %s\n", msg.data);
-                break;
+            case MessageType::ANSWER_GET_TIME: printf("[Server Time] %s\n", msg.data); break;
             case MessageType::ANSWER_GET_NAME: printf("[Server Name] %s\n", msg.data); break;
             case MessageType::ANSWER_GET_CLIENT_LIST:
             {
                 printf("[Client List]\n");
+                // 按行分割并打印客户端列表
                 std::string list(msg.data);
                 size_t      start = 0, end;
                 while ((end = list.find('\n', start)) != std::string::npos) {

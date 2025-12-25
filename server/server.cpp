@@ -30,12 +30,14 @@ Server::Server()
         ERROR("Bind server socket failed!");
         exit(1);
     }
+    // 开始监听端口，允许的最大等待连接数为 MAX_WAITING_CLIENT_COUNT
     listen(server_socket_handle_, MAX_WAITING_CLIENT_COUNT);
     INFO("Server initialized.");
 }
 
 void Server::send(socket_handle_t client_socket_handle, const Message* message)
 {
+    // 向指定客户端发送消息
     const auto error_code = ::send(client_socket_handle, message, sizeof(Message), 0);
     if (error_code < 0) {
         WARNING("Send message to client %d failed.\n\tError code: %zd",
@@ -54,22 +56,25 @@ void* Server::clientHandlerThread(void* arg)
     socket_handle_t client_socket_handle = thread_arg->client_socket_handle;
     char            buffer[4096];
     size_t          buffer_len = 0;
-    // send greeting as a proper Message so client interprets it correctly
+    // 发送问候消息，类型为REPOST，内容为"Hello World!"
     Message greeting_msg;
     greeting_msg.type = MessageType::REPOST;
     strncpy(greeting_msg.data, "Hello World!", sizeof(greeting_msg.data) - 1);
     server->send(client_socket_handle, &greeting_msg);
 
-    bool    running = true;
+    bool running = true;
     while (running) {
+        // 接收客户端数据，追加到buffer
         ssize_t n = recv(client_socket_handle, buffer + buffer_len, sizeof(buffer) - buffer_len, 0);
         if (n <= 0) {
+            // 客户端断开或出错
             WARNING("Receive message from client failed, maybe client disconnected.");
             break;
         }
         buffer_len += n;
 
         size_t offset = 0;
+        // 只要缓冲区中有完整的Message结构体就处理
         while (buffer_len - offset >= sizeof(Message)) {
             Message msg;
             memcpy(&msg, buffer + offset, sizeof(Message));
@@ -87,6 +92,7 @@ void* Server::clientHandlerThread(void* arg)
                     }
                 }
                 server->clients_mutex_.unlock();
+                // 关闭客户端套接字
                 close(client_socket_handle);
                 INFO("Client %d disconnected.", client_socket_handle);
                 running = false;
@@ -95,11 +101,13 @@ void* Server::clientHandlerThread(void* arg)
             case MessageType::GET_TIME:
             {
                 INFO("Client %d requested current time.", client_socket_handle);
+                // 获取当前时间并格式化
                 time_t now;
                 time(&now);
                 struct tm* local_time = localtime(&now);
                 char       time_str[100];
                 strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", local_time);
+                // 构造响应消息并发送
                 Message response_msg;
                 response_msg.type = MessageType::ANSWER_GET_TIME;
                 strncpy(response_msg.data, time_str, sizeof(response_msg.data));
@@ -109,6 +117,7 @@ void* Server::clientHandlerThread(void* arg)
             case MessageType::GET_NAME:
             {
                 INFO("Client %d requested server name.", client_socket_handle);
+                // 获取主机名并发送
                 Message response_msg;
                 response_msg.type = MessageType::ANSWER_GET_NAME;
                 gethostname(response_msg.data, sizeof(response_msg.data));
@@ -119,12 +128,14 @@ void* Server::clientHandlerThread(void* arg)
             case MessageType::GET_CLIENT_LIST:
             {
                 INFO("Client %d requested client list.", client_socket_handle);
+                // 构造客户端列表字符串
                 server->clients_mutex_.lock();
                 std::string client_list;
                 for (const auto& client : server->clients_) {
                     client_list += client.ip_address + ":" + std::to_string(client.port) + "\n";
                 }
                 server->clients_mutex_.unlock();
+                // 发送客户端列表
                 Message response_msg;
                 response_msg.type = MessageType::ANSWER_GET_CLIENT_LIST;
                 strncpy(response_msg.data, client_list.c_str(), sizeof(response_msg.data));
@@ -135,6 +146,7 @@ void* Server::clientHandlerThread(void* arg)
             case MessageType::SEND_MESSAGE:
             {
                 {
+                    // 解析目标ip、端口和消息内容
                     std::string data = std::string(msg.data);
                     std::string ip   = data.substr(0, data.find(":"));
                     data             = data.substr(data.find(":") + 1);
@@ -167,6 +179,7 @@ void* Server::clientHandlerThread(void* arg)
                         server->send(client_socket_handle, &answer_message);
                     }
                     else {
+                        // 构造转发消息
                         Message forward_message;
                         forward_message.type = MessageType::REPOST;
                         strcpy(forward_message.data, data.c_str());
@@ -197,6 +210,7 @@ void* Server::clientHandlerThread(void* arg)
         }
         buffer_len -= offset;
     }
+    // 释放线程参数
     delete thread_arg;
     return nullptr;
 }
@@ -217,6 +231,7 @@ void Server::Run()
             continue;
         }
 
+        // 保存客户端信息
         SocketInfo client_socket_info;
         client_socket_info.handle     = client_socket_handle;
         client_socket_info.ip_address = inet_ntoa(client_addr.sin_addr);
