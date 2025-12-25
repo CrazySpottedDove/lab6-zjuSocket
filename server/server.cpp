@@ -69,6 +69,18 @@ void* Server::clientHandlerThread(void* arg)
         if (n <= 0) {
             // 客户端断开或出错
             WARNING("Receive message from client failed, maybe client disconnected.");
+            server->clients_mutex_.lock();
+            // 从客户端列表中移除该客户端
+            for (size_t i = 0; i < server->clients_.size(); ++i) {
+                if (server->clients_[i].handle == client_socket_handle) {
+                    server->clients_.erase(server->clients_.begin() + i);
+                    break;
+                }
+            }
+            server->clients_mutex_.unlock();
+            // 关闭客户端套接字
+            close(client_socket_handle);
+            WARNING("Disconnect client with socket_handle %d", client_socket_handle);
             break;
         }
         buffer_len += n;
